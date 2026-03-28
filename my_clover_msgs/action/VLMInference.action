@@ -1,0 +1,9 @@
+# Goal
+string user_command
+---
+# Result
+string inferred_action
+bool success
+---
+# Feedback
+string status

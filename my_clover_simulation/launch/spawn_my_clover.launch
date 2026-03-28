@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+    <arg name="x" default="0.0"/>
+    <arg name="y" default="0.0"/>
+    <arg name="z" default="0.3"/>
+
+    <arg name="main_camera" default="true"/>
+    <arg name="maintain_camera_rate" default="false"/>
+    <arg name="rangefinder" default="true"/>
+    <arg name="led" default="true"/>
+    <arg name="gps" default="true"/>
+    <arg name="use_clover_physics" default="false"/>
+
+    <arg name="cmd" default="$(find xacro)/xacro $(find my_clover_description)/urdf/clover/modded_clover.xacro main_camera:=$(arg main_camera) rangefinder:=$(arg rangefinder) led:=$(arg led) gps:=$(arg gps) use_clover_physics:=$(arg use_clover_physics)"/>
+    
+    <param name="robot_description" command="$(arg cmd)"/>
+
+    <node name="$(anon spawn)" pkg="gazebo_ros" type="spawn_model" 
+          args="-urdf -param robot_description -model clover -x $(arg x) -y $(arg y) -z $(arg z) -package_to_model" 
+          output="screen"/>
+</launch>

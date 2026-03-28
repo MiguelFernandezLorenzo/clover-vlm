@@ -1,0 +1,65 @@
+<launch>
+    <arg name="scenario" default="small_house"/>
+    <arg name="scenario_path" value="$(find my_clover_simulation)/scenarios/$(arg scenario)"/>
+    <arg name="world_file" value="$(arg scenario_path)/$(arg scenario).world"/>
+
+    <arg name="type" default="gazebo"/>
+    <arg name="mav_id" default="0"/>
+    <arg name="est" default="ekf2"/>
+    <arg name="vehicle" default="clover"/>
+    <arg name="main_camera" default="true"/>
+    <arg name="maintain_camera_rate" default="false"/>
+    <arg name="rangefinder" default="true"/>
+    <arg name="led" default="true"/>
+    <arg name="gps" default="false"/>
+    <arg name="use_clover_physics" default="false"/>
+    <arg name="gui" default="true"/>
+
+    <env name="GAZEBO_MODEL_PATH" value="$(find clover_description)/..:$(find my_clover_description)/..:$(find clover_simulation)/models:$(optenv GAZEBO_MODEL_PATH)"/>
+    <env name="GAZEBO_RESOURCE_PATH" value="~/.gazebo:$(optenv GAZEBO_RESOURCE_PATH)"/>
+    
+    <include file="$(find gazebo_ros)/launch/empty_world.launch" if="$(eval type == 'gazebo')">
+        <env name="SVGA_VGPU10" value="0"/>
+        <arg name="gui" value="$(arg gui)"/>
+        <arg name="world_name" value="$(arg world_file)"/> 
+        <arg name="verbose" value="true"/>
+    </include>
+
+    <node name="sitl_$(arg mav_id)" pkg="px4" type="px4" output="screen" required="true" 
+          args="$(find px4)/ROMFS/px4fmu_common -s etc/init.d-posix/rcS -i $(arg mav_id)" 
+          unless="$(eval type == 'none')">
+        <env name="PX4_SIM_MODEL" value="$(arg vehicle)"/>
+        <env name="PX4_ESTIMATOR" value="$(arg est)"/>
+    </node>
+
+    <include file="$(find my_clover_simulation)/launch/spawn_my_clover.launch" if="$(eval type == 'gazebo')">
+        <arg name="x" value="2.0"/>
+        <arg name="y" value="1.0"/>
+        <arg name="z" value="0.3"/>
+        <arg name="main_camera" value="$(arg main_camera)"/>
+        <arg name="maintain_camera_rate" value="$(arg maintain_camera_rate)"/>
+        <arg name="rangefinder" value="$(arg rangefinder)"/>
+        <arg name="led" value="$(arg led)"/>
+        <arg name="gps" value="$(arg gps)"/>
+        <arg name="use_clover_physics" value="$(arg use_clover_physics)"/>
+    </include>
+
+    <include file="$(find clover)/launch/clover.launch">
+        <arg name="simulator" value="true"/>
+        <arg name="fcu_conn" value="sitl"/>
+        <arg name="fcu_ip" value="127.0.0.1"/>
+        <arg name="gcs_bridge" value=""/>
+    </include>
+
+    <node pkg="my_clover_basic" type="arming_node.py" name="controlador_ia" output="screen">
+        <param name="ruta_fotos" value="$(arg scenario_path)/photos"/>
+    </node>
+
+    <group ns="stereo_camera"> <node pkg="stereo_image_proc" type="stereo_image_proc" name="stereo_proc">
+        <param name="approximate_sync" value="true" />
+    </node>
+    </group>
+
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" output="screen">
+    <param name="publish_frequency" value="50.0"/> </node>
+</launch>
