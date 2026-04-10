@@ -34,6 +34,7 @@ vlm_model = ReasoningModel.create_model(
     temperature = cfg.temperature,
     top_p = cfg.top_p,
     reasoning_effort = cfg.reasoning_effort,
+    ollama_host = cfg.get('ollama_host', None),
 )
 
 app = Flask(__name__)
@@ -65,16 +66,20 @@ def cmd_vel():
     np_arr = np.frombuffer(img_bytes, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-    # Call Reasoning model
-    response = vlm_model.generate_trajectory(
-        img, query, 
-        topology=topology, 
-        state=state,
-        previous_movement=previous_movement,
-        mov_history=mov_history,
-        # --- PASAMOS LA TELEMETRÍA AL MODELO ---
-        telemetry_text=telemetry_text, 
-    )
+    # Call Reasoning model (con manejo de errores del LLM)
+    try:
+        response = vlm_model.generate_trajectory(
+            img, query, 
+            topology=topology, 
+            state=state,
+            previous_movement=previous_movement,
+            mov_history=mov_history,
+            # --- PASAMOS LA TELEMETRÍA AL MODELO ---
+            telemetry_text=telemetry_text, 
+        )
+    except Exception as e:
+        logger.exception("Error calling VLM model: %s", str(e))
+        return jsonify({'error': 'Model invocation failed', 'detail': str(e)}), 500
     gpt_response = jsonpickle.encode(response)
 
     return Response(response=gpt_response, status=200, mimetype="application/json")
