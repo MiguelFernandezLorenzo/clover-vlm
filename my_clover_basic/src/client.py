@@ -118,6 +118,3 @@ if __name__ == "__main__":
     # Sustituye con la IP de tu WSL2 (hostname -I)
     client = CloverVLMClient(server_ip="192.168.1.100")
     client.main_loop()
-
-git config --global user.email "fernandezlorenzomiguel@gmail.com"
-  git config --global user.name "Miguel Fernandez Lorenzo"
