@@ -9,6 +9,7 @@ from reasoning.VLMModel import ReasoningModel
 import json
 import argparse
 import logging
+import os
 
 logging.basicConfig(
     format="%(message)s", 
@@ -27,7 +28,18 @@ cfg = OmegaConf.load("config.yaml")
 cfg = OmegaConf.to_container(cfg, resolve=True)
 cfg = OmegaConf.create(cfg)
 
+# Allow overriding model and Ollama host via environment variables
+env_model = os.getenv('MODEL')
+if env_model:
+    cfg.model = env_model
+env_ollama = os.getenv('OLLAMA_HOST')
+if env_ollama:
+    # store in cfg so it's available to downstream code that reads cfg
+    cfg.ollama_host = env_ollama
+
 print("Model: ", cfg.model)
+print("Ollama host (env/config):", cfg.get('ollama_host', None))
+
 vlm_model = ReasoningModel.create_model(
     cfg.model,
     max_tokens = cfg.max_tokens,
@@ -90,6 +102,25 @@ if __name__ == '__main__':
                         help='Host address to run the server on')
     parser.add_argument('--port', type=int, default=5001,
                         help='Port to run the server on')
+    parser.add_argument('--model', type=str, default=None,
+                        help='Override model name from config or env (e.g. qwen-vl)')
+    parser.add_argument('--ollama-host', type=str, default=None,
+                        help='Override Ollama host (e.g. http://localhost:11434)')
     args = parser.parse_args()
-    
+    # If CLI args override model or ollama host, recreate the model instance
+    if args.model or args.ollama_host:
+        if args.model:
+            cfg.model = args.model
+        if args.ollama_host:
+            cfg.ollama_host = args.ollama_host
+        logger.info("Recreating model with model=%s ollama_host=%s", cfg.model, cfg.get('ollama_host', None))
+        vlm_model = ReasoningModel.create_model(
+            cfg.model,
+            max_tokens = cfg.max_tokens,
+            temperature = cfg.temperature,
+            top_p = cfg.top_p,
+            reasoning_effort = cfg.reasoning_effort,
+            ollama_host = cfg.get('ollama_host', None),
+        )
+
     app.run(debug=True, host=args.host, port=args.port, use_reloader=False)
