@@ -1,5 +1,11 @@
 **/.env
 __pycache__/
+
+*debug*
+
 *.pyc
 *.pyo
 *.pyd
+
+settings.json
+my_clover_basic/src/config.yaml
