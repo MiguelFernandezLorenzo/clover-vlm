@@ -4,12 +4,15 @@ import base64
 import logging
 import requests
 import cv2
+import numpy as np
+import time
 from dotenv import load_dotenv
 from reasoning.load_prompts import load_system_prompt
 from reasoning.VLMModel import VLMBaseModel
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
 
 
 def parse_json_from_text(text: str):
@@ -36,7 +39,7 @@ class QwenOllamaDescriptor(VLMBaseModel):
     and `OLLAMA_API_KEY` (optional, for cloud).
     """
 
-    def __init__(self, model: str = "qwen-vl", max_tokens: int = 512,
+    def __init__(self, model: str = "qwen3-vl:8b", max_tokens: int = 512,
                  temperature: float = 0.0, top_p: float = 0.2,
                  img_type: str = "image/jpeg", ollama_host: str = None):
         self.model = model
@@ -61,7 +64,6 @@ class QwenOllamaDescriptor(VLMBaseModel):
                 "description": "Visible hallway with a door, move robot to face the door"
             }
 
-        # Build text prompt pieces
         user_text_parts = [user_query]
         if state:
             user_text_parts.append("Current FSM state: " + state)
@@ -76,23 +78,26 @@ class QwenOllamaDescriptor(VLMBaseModel):
 
         system_prompt = load_system_prompt(
             path_dir="prompts",
-            system_prompt_path="drone_system_prompt.txt",
+            system_prompt_path="test.txt",
             output_prompt_path="output_prompt.txt",
             curr_state=state
         )
 
-        # Encode image as data URI and append to prompt
+        # 2. El prompt final DEBE ser 100% texto humano legible
+        prompt_limpio = system_prompt + "\n\n" + user_text
+
+        # 3. Codificar la imagen a Base64 puro (sin prefijos "data:image/jpeg;base64,")
         img_b64 = self._encode_image_b64(image)
-        image_datauri = f"data:{self.img_type};base64,{img_b64}"
 
-        prompt = system_prompt + "\n\n" + user_text + "\n\nImage: " + image_datauri + "\n\n"
-
+        # 4. Construir el payload separando "prompt" e "images"
         payload = {
             "model": self.model,
-            "prompt": prompt,
+            "prompt": prompt_limpio,     # <-- Solo el texto de tus prompts
+            "images": [img_b64],         # <-- La imagen aislada en su propia lista
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "top_p": self.top_p,
+            "stream": False,
         }
 
         url = f"{self.ollama_host.rstrip('/')}/api/generate"
@@ -101,7 +106,7 @@ class QwenOllamaDescriptor(VLMBaseModel):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=30)
+            resp = requests.post(url, json=payload, headers=headers, timeout=120)
             resp.raise_for_status()
             text = resp.text
             # Try to extract JSON from response

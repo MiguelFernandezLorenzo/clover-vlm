@@ -35,7 +35,7 @@ class ReasoningModel:
         elif "gemini" in model:
             from reasoning.gemini import GeminiDescriptor
             return GeminiDescriptor(model, temperature=kwargs.get("temperature", 0))
-        elif "qwen-vl" in model:
+        elif "qwen3-vl:8b" in model:
             from reasoning.qwen_ollama import QwenOllamaDescriptor
             return QwenOllamaDescriptor(model,
                                        max_tokens=kwargs.get("max_tokens", 512),
