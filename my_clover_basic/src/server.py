@@ -60,8 +60,8 @@ def cmd_vel():
 
     query = form_data.get('query', '')
     topology_json = form_data.get('topology', '{}')
-    state = form_data.get('state', '')
-    telemetry_text = form_data.get('telemetry_text', '')
+    state = form_data.get('state', 'Recognize Room')
+    telemetry_text = form_data.get('telemetry_text', 'unkown')
 
     # 1. Leer los bytes crudos enviados por el cliente
     img_bytes = image_file.read()

@@ -78,7 +78,7 @@ class QwenOllamaDescriptor(VLMBaseModel):
 
         system_prompt = load_system_prompt(
             path_dir="prompts",
-            system_prompt_path="test.txt",
+            system_prompt_path="system_prompt.txt",
             output_prompt_path="output_prompt.txt",
             curr_state=state
         )
