@@ -6,90 +6,110 @@ import requests
 import numpy as np
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
-from clover import srv
+from clover import srv  # Importante: asegurarnos de tener los servicios
 from std_srvs.srv import Trigger
+import math
 
 class CloverVLMClient:
     def __init__(self, server_ip="192.168.1.100", port=5001):
         rospy.init_node('clover_vlm_client')
         
-        # Configuración de red para WSL2
         self.url = f"http://{server_ip}:{port}/cmd_vel"
         self.bridge = CvBridge()
         self.last_image = None
         
-        # Proxies de servicios de Clover
         rospy.loginfo("Conectando con servicios de Clover...")
         rospy.wait_for_service('get_telemetry')
+        rospy.wait_for_service('navigate') # <-- NUEVO: Esperar al servicio navigate
+        
         self.get_telemetry = rospy.ServiceProxy('get_telemetry', srv.GetTelemetry)
+        self.navigate = rospy.ServiceProxy('navigate', srv.Navigate) # <-- NUEVO: Proxy para mover el dron
         
-        # Suscripción a la cámara
-        rospy.Subscriber("/main_camera/image_raw", Image, self.image_callback)
-        
+        rospy.Subscriber("/stereo_camera/right/image_color", Image, self.image_callback)
         rospy.loginfo(f"🚀 Cliente listo. Servidor VLM en: {self.url}")
 
     def image_callback(self, msg):
-        """Almacena el frame más reciente del simulador."""
         try:
-            self.last_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            self.last_image = cv_image
         except Exception as e:
-            rospy.logerr(f"Error en callback de imagen: {e}")
-
+            rospy.logerr(f"Error al convertir imagen: {e}")
+            self.last_image = None
+    
     def fetch_telemetry_data(self):
-        """Obtiene y formatea la telemetría para el servidor Flask."""
         try:
-            telem = self.get_telemetry(frame_id='map')
-            telemetry_dict = {
-                "pose": {"x": telem.x, "y": telem.y, "z": telem.z},
-                "orientation": {"yaw": telem.yaw}
+            telemetry = self.get_telemetry()
+            return {
+                'x': telemetry.x,
+                'y': telemetry.y,
+                'z': telemetry.z,
+                'yaw': telemetry.yaw
             }
-            telemetry_text = f"X: {telem.x:.2f}, Y: {telem.y:.2f}, Z: {telem.z:.2f}, Yaw: {telem.yaw:.2f}"
-            return telemetry_dict, telemetry_text
         except Exception as e:
-            rospy.logwarn(f"Error al obtener telemetría: {e}")
-            return {}, "Telemetría no disponible"
-
-    def send_inference_request(self, query, topology, state="Testing"):
-        """Envía la petición multipart/form-data al servidor Flask."""
-        if self.last_image is None:
-            rospy.logwarn("Esperando imagen de la cámara...")
+            rospy.logerr(f"Error al obtener telemetría: {e}")
             return None
-
-        # Preparar imagen
+    def send_inference_request(self, query, topology):
+        if self.last_image is None:
+            rospy.logwarn("No se ha recibido ninguna imagen aún. Esperando...")
+            return None
+        
+        telemetry = self.fetch_telemetry_data()
+        if telemetry is None:
+            rospy.logwarn("No se pudo obtener telemetría. Intentando de nuevo...")
+            return None
+        
+        payload = {
+            'query': query,
+            'telemetry': telemetry,
+            'topology': topology
+        }
+        
         _, img_encoded = cv2.imencode('.jpg', self.last_image)
         files = {'image': ('image.jpg', img_encoded.tobytes(), 'image/jpeg')}
         
-        # Obtener telemetría real
-        telem_json, telem_text = self.fetch_telemetry_data()
-        
-        # Payload estructurado para server.py
-        data = {
-            'query': query,
-            'topology': json.dumps(topology),
-            'state': state,
-            'prev_movement': 'None',
-            'mov_history': json.dumps([]),
-            'telemetry_json': json.dumps(telem_json),
-            'telemetry_text': telem_text
-        }
-
         try:
-            rospy.loginfo("Enviando petición al VLM...")
-            response = requests.post(self.url, files=files, data=data, timeout=35)
+            response = requests.post(self.url, data={'payload': json.dumps(payload)}, files=files, timeout=150)
             response.raise_for_status()
             return response.json()
-        except Exception as e:
-            rospy.logerr(f"Fallo en la conexión con el servidor Flask: {e}")
+        except requests.exceptions.RequestException as e:
+            rospy.logerr(f"Error al comunicarse con el servidor VLM: {e}")
             return None
+    
+    def execute_vlm_command(self, movement_cmd):
+        """Traduce el comando del VLM a instrucciones reales de Clover"""
+        rospy.loginfo(f"Ejecutando comando: {movement_cmd}")
+        
+        # Ejemplo de traducción de comandos. ¡Ajusta esto a lo que devuelva tu VLM!
+        if movement_cmd == "TAKEOFF":
+            # auto_arm=True soluciona el error de "Copter is not in OFFBOARD mode"
+            self.navigate(x=0, y=0, z=1.5, frame_id='body', auto_arm=True)
+            rospy.sleep(3) # Esperar a que despegue
+            
+        elif movement_cmd == "FORWARD":
+            self.navigate(x=1.0, y=0, z=0, frame_id='body', auto_arm=False)
+            
+        elif movement_cmd == "LEFT":
+            self.navigate(x=0, y=1.0, z=0, frame_id='body', auto_arm=False)
+            
+        elif movement_cmd == "LAND":
+            rospy.wait_for_service('land')
+            land = rospy.ServiceProxy('land', Trigger)
+            land()
+        else:
+            rospy.logwarn(f"Comando desconocido o no ejecutable: {movement_cmd}. Manteniendo posición.")
+
+    # ... [Mantén tu método send_inference_request igual] ...
 
     def main_loop(self):
-        """Bucle de ejecución interactivo incorporando el código de evaluación."""
-        # Topología definida para el razonamiento del modelo
         topology = {
             "hallway": ["kitchen", "living room"],
             "kitchen": ["hallway"],
             "living room": ["hallway"]
         }
+
+        # Opcional: Despegue automático al iniciar para evitar problemas de offboard
+        # print("Despegando dron para iniciar operaciones...")
+        # self.execute_vlm_command("TAKEOFF")
 
         while not rospy.is_shutdown():
             print("\n" + "="*50)
@@ -98,23 +118,27 @@ class CloverVLMClient:
             if user_query.lower() in ['exit', 'quit']:
                 break
 
-            # Ejecución de la inferencia (Bucle Abierto)
             result = self.send_inference_request(user_query, topology)
+            raw_response = result.get('response','N/A') if result else 'N/A'
+            
+            try:
+                response = json.loads(raw_response) if raw_response != 'N/A' else {}
+            except json.JSONDecodeError:
+                response = {}
+                rospy.logerr("Error decodificando el JSON del VLM.")
 
             if result:
-                # El servidor Flask devuelve el objeto procesado por ReasoningModel
-                print("\n🧠 --- RESULTADO DEL RAZONAMIENTO ---")
-                print(f"Acción propuesta: {result.get('movement', 'N/A')}")
-                print(f"Estado interno:  {result.get('state', 'N/A')}")
+                movimiento = response.get('movement', 'N/A')
                 
-                # Si el modelo incluye CoT (Chain of Thought)
-                if "chain_of_thought" in result:
-                    print(f"Razonamiento:\n{result['chain_of_thought']}")
-                elif "raw_text" in result:
-                    print(f"Respuesta Raw:\n{result['raw_text']}")
+                print("\n🧠 --- RESULTADO DEL RAZONAMIENTO ---")
+                print(f"Acción propuesta: {movimiento}")
+                print(f"Estado interno:  {response.get('state', 'N/A')}")
                 print("="*50)
+                
+                # --- NUEVO: Ejecutar realmente el comando en el simulador ---
+                if movimiento != 'N/A':
+                    self.execute_vlm_command(movimiento)
 
 if __name__ == "__main__":
-    # Sustituye con la IP de tu WSL2 (hostname -I)
-    client = CloverVLMClient(server_ip="192.168.1.100")
+    client = CloverVLMClient(server_ip="192.168.1.128")
     client.main_loop()

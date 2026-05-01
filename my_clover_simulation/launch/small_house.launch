@@ -25,13 +25,22 @@
         <arg name="verbose" value="true"/>
     </include>
 
-    <node name="sitl_$(arg mav_id)" pkg="px4" type="px4" output="screen" required="true" 
+    <node name="sitl_$(arg mav_id)" pkg="px4" type="px4" output="screen" required="true"
           args="$(find px4)/ROMFS/px4fmu_common -s etc/init.d-posix/rcS -i $(arg mav_id)" 
           unless="$(eval type == 'none')">
         <env name="PX4_SIM_MODEL" value="$(arg vehicle)"/>
         <env name="PX4_ESTIMATOR" value="$(arg est)"/>
+        
+        <env name="PX4_SIM_BATTERY_VOLTAGE" value="12.6"/>
     </node>
 
+    <group ns="mavparam_config">
+        <node pkg="mavros" type="mavparam" name="fail_rc_exc" args="set COM_RCL_EXCEPT 4" />
+        <node pkg="mavros" type="mavparam" name="fail_rc_act" args="set NAV_RCL_ACT 0" />
+        <node pkg="mavros" type="mavparam" name="fail_obl_act" args="set COM_OBL_ACT 0" />
+        <node pkg="mavros" type="mavparam" name="fail_obl_rc" args="set COM_OBL_RC_ACT 0" />
+    </group>
+    
     <include file="$(find my_clover_simulation)/launch/spawn_my_clover.launch" if="$(eval type == 'gazebo')">
         <arg name="x" value="2.0"/>
         <arg name="y" value="1.0"/>
