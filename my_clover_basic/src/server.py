@@ -51,25 +51,47 @@ def cmd_vel():
     if vlm_model is None:
         return jsonify({'error': 'Modelo no inicializado'}), 500
 
-    # Extraer todos los datos del formulario para el ZIP
-    form_data = request.form.to_dict()
     image_file = request.files.get('image')
-
     if not image_file:
         return jsonify({'error': 'No se recibió imagen'}), 400
 
-    query = form_data.get('query', '')
-    topology_json = form_data.get('topology', '{}')
-    state = form_data.get('state', 'Recognize Room')
-    telemetry_text = form_data.get('telemetry_text', 'unkown')
+    # 1. RESOLUCIÓN DE AMBIGÜEDAD: Extraer datos crudos del formulario
+    raw_form = request.form.to_dict()
+    
+    # 2. DESEMPAQUETADO INTELIGENTE
+    # Si el cliente envió un 'payload' empaquetado (como hace tu client.py actual):
+    if 'payload' in raw_form:
+        try:
+            parsed_data = json.loads(raw_form['payload'])
+            logger.info("📦 Payload JSON detectado y desempaquetado.")
+        except json.JSONDecodeError:
+            return jsonify({'error': 'El campo payload no es un JSON válido'}), 400
+    else:
+        # Si el cliente envió los datos de forma plana:
+        parsed_data = raw_form
+        logger.info("📄 Formato plano detectado.")
 
-    # 1. Leer los bytes crudos enviados por el cliente
+    # 3. EXTRACCIÓN DE VARIABLES (ahora leemos de parsed_data)
+    query = parsed_data.get('query', '')
+    state = parsed_data.get('state', 'Recognize Room')
+    telemetry_text = parsed_data.get('telemetry_text', 'unknown') # Typo corregido (unkown -> unknown)
+
+    # Manejo crítico de la topología (a veces es string JSON, a veces dict directo)
+    topology_raw = parsed_data.get('topology', {})
+    if isinstance(topology_raw, str):
+        try:
+            topology_data = json.loads(topology_raw)
+        except json.JSONDecodeError:
+            topology_data = {}
+    else:
+        topology_data = topology_raw
+
+    # ... (Procesamiento de imagen igual) ...
     img_bytes = image_file.read()
+    
+    # Asumiendo que save_debug_zip ahora recibe el dict procesado para guardar información útil
+    # save_debug_zip(img_bytes, parsed_data) 
 
-    # 2. Guardar el volcado de depuración
-    save_debug_zip(img_bytes, form_data)
-
-    # 3. Decodificar la imagen a una matriz OpenCV (Lo que ReasoningModel necesita)
     np_arr = np.frombuffer(img_bytes, np.uint8)
     img_cv2 = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
@@ -78,25 +100,27 @@ def cmd_vel():
 
     try:
         logger.info(f"🧠 Invocando VLM con estado: {state}")
-        # Llamada al modelo pasando img_cv2 (matriz NumPy), NO Base64
+        # Llamada al modelo
         response = vlm_model.generate_trajectory(
             img_cv2, 
             query,    
-            topology=json.loads(topology_json), 
+            topology=topology_data, # Pasamos el dict ya parseado, no el string
             state=state,
             telemetry_text=telemetry_text
         )
         
         logger.info("✅ Respuesta de Ollama obtenida")
         gpt_response = jsonpickle.encode(response)
-        print("------------------------------------------")
+        
+        print("\n" + "="*40)
         print(f"CONTENIDO REAL DE LA RESPUESTA: {response}")
-        print("------------------------------------------")
+        print("="*40 + "\n")
+        
         return Response(response=gpt_response, status=200, mimetype="application/json")
 
     except Exception as e:
         logger.error(f"❌ Error en el modelo: {e}")
-        return jsonify({'error': str(e)})
+        return jsonify({'error': str(e)}), 500 # Es importante devolver 500, no dejarlo sin status
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

@@ -25,6 +25,13 @@ class CloverVLMClient:
         self.get_telemetry = rospy.ServiceProxy('get_telemetry', srv.GetTelemetry)
         self.navigate = rospy.ServiceProxy('navigate', srv.Navigate) # <-- NUEVO: Proxy para mover el dron
         
+        self.action_map = {
+            'A': {'name': 'Avanzar', 'axis': 'x', 'multiplier': 0.1}, # A1=0.1m, A3=1m
+            'B': {'name': 'Lateral', 'axis': 'y', 'multiplier': 0.1},  # B1=0.1m, B3=1m
+            'C': {'name': 'Rotar',   'axis': 'yaw', 'multiplier': 0.2}, # C en radianes
+            'D': {'name': 'Vertical', 'axis': 'z', 'multiplier': 0.2}
+        }
+
         rospy.Subscriber("/stereo_camera/right/image_color", Image, self.image_callback)
         rospy.loginfo(f"🚀 Cliente listo. Servidor VLM en: {self.url}")
 
@@ -75,6 +82,80 @@ class CloverVLMClient:
             rospy.logerr(f"Error al comunicarse con el servidor VLM: {e}")
             return None
     
+    def parse_and_execute(self, command_code):
+        """
+        Interpreta códigos como 'A3' o 'B1'
+        """
+        if len(command_code) < 2:
+            rospy.logwarn(f"Código inválido: {command_code}")
+            return False
+
+        letra = command_code[0].upper()
+        try:
+            grado = int(command_code[1:])
+        except ValueError:
+            rospy.logerr("Grado de acción no es un número")
+            return False
+
+        if letra in self.action_map:
+            config = self.action_map[letra]
+            distancia = grado * config['multiplier']
+            
+            # Construir argumentos para navigate
+            nav_args = {'x': 0, 'y': 0, 'z': 0, 'yaw': 0, 'frame_id': 'body'}
+            nav_args[config['axis']] = distancia
+            
+            rospy.loginfo(f"Ejecutando: {config['name']} {distancia}m")
+            self.navigate(**nav_args)
+            rospy.sleep(2) # Tiempo de estabilización
+            return True
+        
+        elif letra == 'L': # Supongamos L para Land
+            self.execute_vlm_command("LAND")
+            return True
+            
+        return False
+
+    def autonomous_loop(self, initial_query):
+        current_state = "Recognize Room" # Estado inicial
+        query = initial_query
+        
+        while not rospy.is_shutdown():
+            rospy.loginfo(f"🔄 Ciclo Autónomo - Estado actual: {current_state}")
+            
+            # 1. Pedir razonamiento al VLM
+            result = self.send_inference_request(query, self.topology, current_state)
+            
+            if not result:
+                rospy.logerr("Fallo en comunicación. Reintentando...")
+                rospy.sleep(2)
+                continue
+
+            # 2. Extraer respuesta (asumiendo que el VLM devuelve JSON con 'movement' y 'next_state')
+            try:
+                # Si el VLM devuelve el JSON directamente en el campo 'response'
+                res_data = json.loads(result.get('response', '{}'))
+                cmd = res_data.get('movement', 'WAIT')
+                current_state = res_data.get('state', current_state) # El VLM decide el siguiente estado
+                
+                rospy.loginfo(f"🤖 VLM dice: Accion={cmd}, Nuevo Estado={current_state}")
+
+                # 3. Ejecutar acción si no es espera
+                if cmd != 'WAIT':
+                    success = self.parse_and_execute(cmd)
+                    if not success:
+                        rospy.logwarn("No se pudo ejecutar el comando.")
+                
+                # 4. Condición de parada (ejemplo)
+                if current_state == "Goal Reached" or cmd == "LAND":
+                    rospy.loginfo("Objetivo alcanzado. Aterrizando.")
+                    break
+
+            except Exception as e:
+                rospy.logerr(f"Error procesando respuesta: {e}")
+                
+            rospy.sleep(1) # Pequeña pausa entre iteraciones de pensamiento
+
     def execute_vlm_command(self, movement_cmd):
         """Traduce el comando del VLM a instrucciones reales de Clover"""
         rospy.loginfo(f"Ejecutando comando: {movement_cmd}")
