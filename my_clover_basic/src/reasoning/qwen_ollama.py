@@ -49,7 +49,7 @@ class QwenOllamaDescriptor(VLMBaseModel):
         self.top_p = top_p
         self.reasoning_effort = reasoning_effort # <--- Almacenado
         self.img_type = img_type
-        self.ollama_host = ollama_host or os.getenv("OLLAMA_HOST", "http://172.30.240.1:11434")
+        self.ollama_host = ollama_host or os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
         self.api_key = os.getenv("OLLAMA_API_KEY")
 
     def _encode_image_b64(self, image):
