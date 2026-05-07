@@ -35,12 +35,31 @@ class ReasoningModel:
         elif "gemini" in model:
             from reasoning.gemini import GeminiDescriptor
             return GeminiDescriptor(model, temperature=kwargs.get("temperature", 0))
-        elif "qwen3-vl:8b" in model:
+        elif "qwen3-vl" in model:
             from reasoning.qwen_ollama import QwenOllamaDescriptor
             return QwenOllamaDescriptor(model,
                                        max_tokens=kwargs.get("max_tokens", 512),
                                        temperature=kwargs.get("temperature", 0.0),
                                        top_p=kwargs.get("top_p", 0.2),
                                        ollama_host=kwargs.get("ollama_host", None))
+        elif "qwen3.5" in model:
+            from reasoning.qwen_ollama import QwenOllamaDescriptor
+            return QwenOllamaDescriptor(model,
+                                       max_tokens=kwargs.get("max_tokens", 128),
+                                       reasoning_effort=kwargs.get('reasoning_effort', 'low'), # Añadido aquí
+                                       temperature=kwargs.get("temperature", 0.0),
+                                       top_p=kwargs.get("top_p", 0.2),
+                                       ollama_host=kwargs.get("ollama_host", None))
+        elif "llama" in model:
+            from reasoning.llama_ollama import LlamaOllamaDescriptor
+            return LlamaOllamaDescriptor(
+                model,
+                max_tokens=kwargs.get("max_tokens", 128),
+                reasoning_effort=kwargs.get('reasoning_effort', 'low'),
+                temperature=kwargs.get("temperature", 0.0),
+                top_p=kwargs.get("top_p", 0.2),
+                ollama_host=kwargs.get("ollama_host", None)
+            )
+        
         else:
             raise ValueError(f"Model not implemented: {model}")

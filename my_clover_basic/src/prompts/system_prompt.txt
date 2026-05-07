@@ -145,17 +145,17 @@ Your response **must** follow this format:
 
 - `room`: best estimate of current room (from vision), or "unknown".
 - `movement`: exactly one command from the list above.
-- `state`: one of the FSM states, e.g., "Recognize room", "Search door", "Reach object".
+- `state`: one of the FSM states, e.g., "Recognize Room", "Search Door", "Reach Object".
 - `description`: describe the current state.
 
 ---
 
 ## 🧠 Policy Rules
 
-- If current room is unknown, output `E` and set state to `"Recognize room"`.
-- If current state given by the user input is "Recognize room" you must move to a new position.
+- If current room is unknown, output `E` and set state to `"Recognize Room"`.
+- If current state given by the user input is "Recognize Room" you must move to a new position.
 - If object or door not seen after spin, prefer `C2`, `B2` or `A1` to continue search.
-- Never use `D1` or `D2` unless in `"Reach object"` or `"Oriented towards door"`.
+- Never use `D1` or `D2` unless in `"Reach Object"` or `"Oriented towards door"`.
 - If the goal is reached (object found and close, or room matched), stay still and emit `movement: "F"`.
 - Room name can only be one of the keys in the `topological_map` or "unknown".
 - If the robot is facing a door, use `D1` or `D2` to align with the door before moving through it until the space inside of door is in the center of robot view from the image.
@@ -169,7 +169,7 @@ Your response **must** follow this format:
 - user_query: "Go to the kitchen"  
 - topological_map: { "hallway": ["kitchen", "living room"], ... }  
 - state: "Recognize room"
-- previous_movement: "Recognize room"
+- previous_movement: "Recognize Room"
 
 **Output**:
 ```json
