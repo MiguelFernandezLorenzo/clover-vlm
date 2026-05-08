@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import rospy
+import math
 import cv2
 import json
 import requests
@@ -32,12 +33,12 @@ class CloverVLMClient:
         self.get_telemetry = rospy.ServiceProxy('get_telemetry', srv.GetTelemetry)
         self.navigate = rospy.ServiceProxy('navigate', srv.Navigate)
         
-        # Map for VLM movement codes (e.g., A3, B1)
+        # Map for VLM movement codes (e.g., A3, B1) Using degrees for rotation and meters for translation.
         self.action_map = {
-            'A': {'name': 'Forward',  'axis': 'x',   'multiplier': 0.1},
-            'B': {'name': 'Rotate',     'axis': 'yaw',   'multiplier': 0.1},
-            'C': {'name': 'Rotate',   'axis': 'yaw', 'multiplier': -0.1},
-            'D': {'name': 'Lateral', 'axis': 'z',   'multiplier': 0.1}
+            'A': {'name': 'Forward',  'axis': 'x', 'base': 0.1, 'multiplier': [1,2.5,5]},
+            'B': {'name': 'Rotate',     'axis': 'yaw','base': 15,   'multiplier': [1,3,6]},
+            'C': {'name': 'Rotate',   'axis': 'yaw', 'base': -15, 'multiplier': [1,3,6]},
+            'D': {'name': 'Lateral', 'axis': 'y', 'base': 0.1,  'multiplier': [-1,1]}    
         }
 
         rospy.Subscriber("/stereo_camera/right/image_color", Image, self.image_callback)
@@ -46,7 +47,7 @@ class CloverVLMClient:
     def image_callback(self, msg):
         try:
             self.last_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            self.last_image = cv2.resize(self.last_image, (448, 448))
+            self.last_image = cv2.resize(self.last_image, (240, 240))
         except Exception as e:
             rospy.logerr(f"Image conversion error: {e}")
 
@@ -87,6 +88,7 @@ class CloverVLMClient:
     def execute_any_command(self, cmd):
         cmd = cmd.upper().strip()
         
+        # 1. Comandos básicos
         if cmd == "TAKEOFF":
             rospy.loginfo("Executing Takeoff...")
             self.navigate(x=0, y=0, z=1.5, frame_id='body', auto_arm=True)
@@ -94,25 +96,51 @@ class CloverVLMClient:
             return True
         elif cmd == "LAND":
             rospy.loginfo("Executing Landing...")
-            land_srv = rospy.ServiceProxy('land', Trigger)
-            land_srv()
-            return True
+            # Asegúrate de que el servicio 'land' esté disponible
+            try:
+                land_srv = rospy.ServiceProxy('land', Trigger)
+                land_srv()
+                return True
+            except rospy.ServiceException as e:
+                rospy.logerr(f"Landing failed: {e}")
+                return False
         
+        # 2. Comandos del Action Map (Ej: A2, B3)
         if len(cmd) >= 2 and cmd[0] in self.action_map:
             letter = cmd[0]
             try:
-                magnitude = int(cmd[1:])
+                # El segundo carácter es el nivel de intensidad (1, 2, 3)
+                # Usamos index-1 porque las listas en Python empiezan en 0
+                idx = int(cmd[1]) - 1 
                 config = self.action_map[letter]
-                distance = magnitude * config['multiplier']
+                
+                # Validar que el índice exista en los multiplicadores
+                if not (0 <= idx < len(config['multiplier'])):
+                    rospy.logwarn(f"Índice fuera de rango: {cmd}")
+                    return False
+
+                # Cálculo racional: Base * Multiplicador
+                # Si es rotación, convertimos a radianes
+                base_val = config.get('base', 1.0) # 1.0 por defecto si no hay base (Lateral)
+                multiplier = config['multiplier'][idx]
+                distance = base_val * multiplier
                 
                 nav_args = {'x': 0, 'y': 0, 'z': 0, 'yaw': 0, 'frame_id': 'body'}
-                nav_args[config['axis']] = distance
                 
-                rospy.loginfo(f"Executing: {config['name']} {distance}m")
+                if config['axis'] == 'yaw':
+                    # IMPORTANTE: Convertir grados a radianes para ROS
+                    nav_args['yaw'] = math.radians(distance)
+                    rospy.loginfo(f"Executing: {config['name']} {distance} degrees")
+                else:
+                    nav_args[config['axis']] = distance
+                    rospy.loginfo(f"Executing: {config['name']} {distance}m")
+                
                 self.navigate(**nav_args)
                 rospy.sleep(1)
                 return True
-            except ValueError:
+                
+            except (ValueError, IndexError) as e:
+                rospy.logerr(f"Error parsing command {cmd}: {e}")
                 return False
         
         return False
