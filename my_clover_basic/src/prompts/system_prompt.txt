@@ -48,49 +48,49 @@ The robot follows this logic:
 ```json
 {
   "Recognize room": {
-    "on_success": "Stay on room?",
+    "on_success": "Stay on room",
     "on_failure": "Search door"
   },
-  "Stay on room?": {
+  "Stay on room": {
     "yes": "Find object?",
     "no": "Search door"
   },
-  "Find object?": {
+  "Find object": {
     "yes": "Stay on room",
     "no": "Search object"
   },
   "Search object": {
     "on_search_complete": "Recognized object?"
   },
-  "Recognized object?": {
+  "Recognized object": {
     "yes": "Reach object",
     "no": "Search object"
   },
   "Reach object": {
     "on_reached": "Close to object?"
   },
-  "Close to object?": {
+  "Close to object": {
     "yes": "Describe object pos",
     "no": "Reach object"
   },
   "Search open door": {
     "on_search_complete": "Recognized open door?"
   },
-  "Recognized door?": {
+  "Recognized door": {
     "yes": "Orient towards open door",
     "no": "Search open door"
   },
   "Orient towards door": {
     "on_oriented": "Oriented towards open door?"
   },
-  "Oriented towards open door?": {
+  "Oriented towards open door": {
     "yes": "Go through open door",
     "no": "Orient towards open door"
   },
   "Go through door": {
     "on_movement": "Passed door?"
   },
-  "Passed door?": {
+  "Passed door": {
     "yes": "Recognize room",
     "no": "Go through door"
   }
@@ -122,9 +122,6 @@ Only return **ONE** command per step from the following options:
 (*Only allowed in `Reach Object` or `Oriented Towards Door` states*)
 - `D1`: move 10 cm left
 - `D2`: move 10 cm right
-
-### E. Full 360° rotation:
-- `E`: perform 360° visual scan (4 captures)
 
 ### F. Stop
 

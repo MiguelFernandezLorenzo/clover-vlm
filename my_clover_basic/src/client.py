@@ -20,9 +20,9 @@ class CloverVLMClient:
         
         # World topology for VLM navigation logic
         self.topology = {
-            "hallway": ["kitchen", "living room"],
-            "kitchen": ["hallway"],
-            "living room": ["hallway"]
+            "kitchen": [ "living room"],
+            "bedroom": ["kitchen"],
+            "living room": ["kitchen", "bedroom"],
         }
         
         rospy.loginfo("Connecting to Clover services...")
