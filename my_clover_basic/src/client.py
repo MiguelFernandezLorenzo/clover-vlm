@@ -46,7 +46,7 @@ class CloverVLMClient:
     def image_callback(self, msg):
         try:
             self.last_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            self.last_image = cv2.resize(self.last_image, (448, 448))
+            self.last_image = cv2.resize(self.last_image, (240, 240))
         except Exception as e:
             rospy.logerr(f"Image conversion error: {e}")
 
