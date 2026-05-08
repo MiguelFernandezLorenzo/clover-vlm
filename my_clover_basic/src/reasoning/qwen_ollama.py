@@ -33,7 +33,7 @@ def parse_json_from_text(text: str):
 
 
 class QwenOllamaDescriptor(VLMBaseModel):
-    """Descriptor that calls Qwen-VL hosted via Ollama (local or cloud).
+    """Descriptor that calls Qwen (3/VL, 3.5) hosted via Ollama (local or cloud).
 
     Expects environment variables `OLLAMA_HOST` (optional, default http://localhost:11434)
     and `OLLAMA_API_KEY` (optional, for cloud).
@@ -110,7 +110,7 @@ class QwenOllamaDescriptor(VLMBaseModel):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=120)
+            resp = requests.post(url, json=payload, headers=headers, timeout=3000)
             resp.raise_for_status()
             text = resp.text
             # Try to extract JSON from response
