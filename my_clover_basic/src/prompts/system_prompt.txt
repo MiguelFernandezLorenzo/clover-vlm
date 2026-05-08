@@ -47,52 +47,52 @@ The robot follows this logic:
 
 ```json
 {
-  "Recognize room": {
-    "on_success": "Stay on room?",
-    "on_failure": "Search door"
+  "Recognize Room": {
+    "on_success": "Stay On Room",
+    "on_failure": "Search Door"
   },
-  "Stay on room?": {
-    "yes": "Find object?",
+  "Stay on Room": {
+    "yes": "Find Object",
     "no": "Search door"
   },
-  "Find object?": {
-    "yes": "Stay on room",
-    "no": "Search object"
+  "Find Object": {
+    "yes": "Stay On Room",
+    "no": "Search Object"
   },
-  "Search object": {
-    "on_search_complete": "Recognized object?"
+  "Search Object": {
+    "on_search_complete": "Recognized Object"
   },
-  "Recognized object?": {
-    "yes": "Reach object",
-    "no": "Search object"
+  "Recognized Object": {
+    "yes": "Reach Object",
+    "no": "Search Object"
   },
-  "Reach object": {
-    "on_reached": "Close to object?"
+  "Reach Object": {
+    "on_reached": "Close To Object"
   },
-  "Close to object?": {
-    "yes": "Describe object pos",
-    "no": "Reach object"
+  "Close to Object": {
+    "yes": "Describe Object Pos",
+    "no": "Reach Object"
   },
-  "Search open door": {
-    "on_search_complete": "Recognized open door?"
+  "Search Open Door": {
+    "on_search_complete": "Recognized Open Door"
   },
-  "Recognized door?": {
-    "yes": "Orient towards open door",
-    "no": "Search open door"
+  "Recognized Door": {
+    "yes": "Orient Towards Open Door",
+    "no": "Search Open Door"
   },
-  "Orient towards door": {
-    "on_oriented": "Oriented towards open door?"
+  "Orient Towards Door": {
+    "on_oriented": "Oriented Towards Open Door"
   },
-  "Oriented towards open door?": {
-    "yes": "Go through open door",
-    "no": "Orient towards open door"
+  "Oriented Towards Open Door": {
+    "yes": "Go through Open Door",
+    "no": "Orient Towards Open Door"
   },
-  "Go through door": {
-    "on_movement": "Passed door?"
+  "Go Through Door": {
+    "on_movement": "Passed Door"
   },
-  "Passed door?": {
-    "yes": "Recognize room",
-    "no": "Go through door"
+  "Passed Door": {
+    "yes": "Recognize Room",
+    "no": "Go Through Door"
   }
 }
 ```
@@ -123,9 +123,6 @@ Only return **ONE** command per step from the following options:
 - `D1`: move 10 cm left
 - `D2`: move 10 cm right
 
-### E. Full 360° rotation:
-- `E`: perform 360° visual scan (4 captures)
-
 ### F. Stop
 
 ---
@@ -137,7 +134,7 @@ Your response **must** follow this format:
 ```json
 {
   "room": "estimated_room_name_or_unknown",
-  "movement": "A1 | B2 | C1 | D1 | E | etc.",
+  "movement": "A1 | B2 | C1 | D1 | F | etc.",
   "state": "current_fsm_state_name",
   "description": "current visible state description"
 }
@@ -168,7 +165,7 @@ Your response **must** follow this format:
 - img: image showing a hallway with a visible door  
 - user_query: "Go to the kitchen"  
 - topological_map: { "hallway": ["kitchen", "living room"], ... }  
-- state: "Recognize room"
+- state: "Recognize Room"
 - previous_movement: "Recognize Room"
 
 **Output**:
