@@ -4,7 +4,7 @@ import numpy as np
 from flask import Flask, Response, request, jsonify
 import jsonpickle
 from omegaconf import OmegaConf
-from reasoning.VLMModel import ReasoningModel
+from reasoning.VLMModel import ReasoningModel  # Ahora importa el Factory vLLM
 import json
 import argparse
 import logging
@@ -22,127 +22,107 @@ cfg = OmegaConf.to_container(cfg, resolve=True)
 cfg = OmegaConf.create(cfg)
 
 app = Flask(__name__)
-vlm_model = None  # Definimos el placeholder global
+vlm_model = None  
 
-# --- FUNCIÓN DE DEPURACIÓN ZIP ---
+# --- FUNCIÓN DE DEPURACIÓN ZIP (Sin cambios, es útil) ---
 def save_debug_zip(image_bytes, form_data, output_folder="debug_dumps"):
-    """Crea un archivo .zip con la imagen y un JSON de los datos recibidos."""
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
-        
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     zip_filename = os.path.join(output_folder, f"payload_{timestamp}.zip")
-    
     with zipfile.ZipFile(zip_filename, 'w') as zipf:
         if image_bytes:
             zipf.writestr("captura_dron.jpg", image_bytes)
-        json_dump = json.dumps(form_data, indent=4)
-        zipf.writestr("datos_cliente.json", json_dump)
-        
+        zipf.writestr("datos_cliente.json", json.dumps(form_data, indent=4))
     logger.info(f"📦 Volcado guardado en: {zip_filename}")
-# ---------------------------------
 
 @app.route('/cmd_vel', methods=['POST'])
 def cmd_vel():
     global vlm_model 
     
-    logger.info("📥 Petición recibida")
-    
     if vlm_model is None:
-        return jsonify({'error': 'Modelo no inicializado'}), 500
+        return jsonify({'error': 'Modelo vLLM no inicializado en el servidor'}), 500
 
     image_file = request.files.get('image')
     if not image_file:
         return jsonify({'error': 'No se recibió imagen'}), 400
 
-    # 1. RESOLUCIÓN DE AMBIGÜEDAD: Extraer datos crudos del formulario
     raw_form = request.form.to_dict()
     
-    # 2. DESEMPAQUETADO INTELIGENTE
-    # Si el cliente envió un 'payload' empaquetado (como hace tu client.py actual):
+    # Desempaquetado del payload
     if 'payload' in raw_form:
         try:
             parsed_data = json.loads(raw_form['payload'])
-            logger.info("📦 Payload JSON detectado y desempaquetado.")
         except json.JSONDecodeError:
-            return jsonify({'error': 'El campo payload no es un JSON válido'}), 400
+            return jsonify({'error': 'Payload JSON inválido'}), 400
     else:
-        # Si el cliente envió los datos de forma plana:
         parsed_data = raw_form
-        logger.info("📄 Formato plano detectado.")
 
-    # 3. EXTRACCIÓN DE VARIABLES (ahora leemos de parsed_data)
     query = parsed_data.get('query', '')
     state = parsed_data.get('state', 'Recognize Room')
-    telemetry_text = parsed_data.get('telemetry_text', 'unknown') # Typo corregido (unkown -> unknown)
+    telemetry_text = parsed_data.get('telemetry_text', 'unknown')
 
-    # Manejo crítico de la topología (a veces es string JSON, a veces dict directo)
+    # Parseo de topología
     topology_raw = parsed_data.get('topology', {})
-    if isinstance(topology_raw, str):
-        try:
-            topology_data = json.loads(topology_raw)
-        except json.JSONDecodeError:
-            topology_data = {}
-    else:
-        topology_data = topology_raw
+    topology_data = json.loads(topology_raw) if isinstance(topology_raw, str) else topology_raw
 
-    # ... (Procesamiento de imagen igual) ...
+    # Procesamiento de imagen
     img_bytes = image_file.read()
-    
-    # Asumiendo que save_debug_zip ahora recibe el dict procesado para guardar información útil
-    # save_debug_zip(img_bytes, parsed_data) 
-
     np_arr = np.frombuffer(img_bytes, np.uint8)
     img_cv2 = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
     if img_cv2 is None:
-        return jsonify({'error': 'La imagen está corrupta o no es válida'}), 400
+        return jsonify({'error': 'Imagen corrupta'}), 400
 
     try:
-        logger.info(f"🧠 Invocando VLM con estado: {state}")
-        # Llamada al modelo
+        logger.info(f"🧠 vLLM Inferencia | Estado: {state}")
+        # El descriptor vLLM recibe la imagen cv2 directamente
         response = vlm_model.generate_trajectory(
             img_cv2, 
             query,    
-            topology=topology_data, # Pasamos el dict ya parseado, no el string
+            topology=topology_data, 
             state=state,
-            telemetry_text=telemetry_text
+            telemetry_text=telemetry_text,
+            test=parsed_data.get('test', False)
         )
         
-        logger.info("✅ Respuesta de Ollama obtenida")
+        # vLLM devuelve un dict, lo codificamos para el cliente
         gpt_response = jsonpickle.encode(response)
-        
-        print("\n" + "="*40)
-        print(f"CONTENIDO REAL DE LA RESPUESTA: {response}")
-        print("="*40 + "\n")
+        logger.info(f"✅ Respuesta generada: {response.get('movement', 'N/A')}")
         
         return Response(response=gpt_response, status=200, mimetype="application/json")
 
     except Exception as e:
-        logger.error(f"❌ Error en el modelo: {e}")
-        return jsonify({'error': str(e)}), 500 # Es importante devolver 500, no dejarlo sin status
+        logger.error(f"❌ Error en motor vLLM: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--host', type=str, default='0.0.0.0')
     parser.add_argument('--port', type=int, default=5001)
     parser.add_argument('--model', type=str, default=None)
-    parser.add_argument('--ollama-host', type=str, default=None)
+    parser.add_argument('--gpu-util', type=float, default=0.8) 
     args = parser.parse_args()
 
-    # 2. Aplicar overrides de terminal a la configuración
+    # Overrides de configuración
     if args.model: cfg.model = args.model
-    if args.ollama_host: cfg.ollama_host = args.ollama_host
 
-    logger.info(f"🚀 Iniciando modelo: {cfg.model}")
-    logger.info(f"🌐 Conectando a Ollama en: {cfg.get('ollama_host')}")
+    logger.info(f"🚀 Cargando motor nativo vLLM: {cfg.model}")
 
-    # 3. Inicializar el modelo globalmente UNA SOLA VEZ
-    vlm_model = ReasoningModel.create_model(
-        cfg.model,
-        max_tokens=cfg.max_tokens,
-        temperature=cfg.temperature,
-        ollama_host=cfg.get('ollama_host')
-    )
+    # Inicialización del modelo (Singleton)
+    # IMPORTANTE: Eliminamos ollama_host y añadimos parámetros de vLLM
+    try:
+        vlm_model = ReasoningModel.create_model(
+            cfg.model,
+            max_tokens=cfg.get('max_tokens', 512),
+            temperature=cfg.get('temperature', 0.0),
+            gpu_memory_utilization=args.gpu_util,
+            model_path=cfg.get('model_path', None) # Ruta a los pesos .safetensors/bin
+        )
+    except Exception as e:
+        logger.critical(f"💥 Error fatal cargando el modelo: {e}")
+        exit(1)
 
+    # use_reloader=False es OBLIGATORIO. 
+    # Si Flask recarga, intentará cargar el modelo dos veces y dará Out of Memory.
     app.run(debug=True, host=args.host, port=args.port, use_reloader=False)

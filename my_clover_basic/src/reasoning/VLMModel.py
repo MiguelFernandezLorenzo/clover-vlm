@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
-import base64
 import cv2
-
 
 class VLMBaseModel(ABC):
     @abstractmethod
@@ -11,55 +9,43 @@ class VLMBaseModel(ABC):
                             state: str,
                             previous_movement: str,
                             mov_history: str,
-                            test: bool) -> str:
+                            test: bool) -> dict: # Retornamos dict para consistencia JSON
         pass
 
-    def encode_image_base64(self, image):
-        """Function to encode the image as base64"""
-        _, buffer = cv2.imencode('.jpg', image)
-        return base64.b64encode(buffer).decode("utf-8") 
+
     
         
 class ReasoningModel:
     @staticmethod
     def create_model(model: str, **kwargs) -> VLMBaseModel:
-        if "gpt" in model:
-            from reasoning.gpt_class import GPTDescriptor
-            return GPTDescriptor(model, temperature=kwargs.get("temperature", 0),
-                                 max_tokens=kwargs.get("max_tokens", 300),
-                                 top_p=kwargs.get("top_p", 0.2), img_type="image/jpeg")
-        elif "o4" in model:
-            from reasoning.o_models_class import OModelDescriptor
-            return OModelDescriptor(model, max_tokens=kwargs.get("max_tokens", 300),
-                                    reasoning_effort=kwargs.get("reasoning_effort", "medium"))
-        elif "gemini" in model:
-            from reasoning.gemini import GeminiDescriptor
-            return GeminiDescriptor(model, temperature=kwargs.get("temperature", 0))
-        elif "qwen3-vl" in model:
-            from reasoning.qwen_ollama import QwenOllamaDescriptor
-            return QwenOllamaDescriptor(model,
-                                       max_tokens=kwargs.get("max_tokens", 512),
-                                       temperature=kwargs.get("temperature", 0.0),
-                                       top_p=kwargs.get("top_p", 0.2),
-                                       ollama_host=kwargs.get("ollama_host", None))
-        elif "qwen3.5" in model:
-            from reasoning.qwen_ollama import QwenOllamaDescriptor
-            return QwenOllamaDescriptor(model,
-                                       max_tokens=kwargs.get("max_tokens", 128),
-                                       reasoning_effort=kwargs.get('reasoning_effort', 'low'), # Añadido aquí
-                                       temperature=kwargs.get("temperature", 0.0),
-                                       top_p=kwargs.get("top_p", 0.2),
-                                       ollama_host=kwargs.get("ollama_host", None))
-        elif "llama" in model:
-            from reasoning.llama_ollama import LlamaOllamaDescriptor
-            return LlamaOllamaDescriptor(
-                model,
-                max_tokens=kwargs.get("max_tokens", 128),
-                reasoning_effort=kwargs.get('reasoning_effort', 'low'),
-                temperature=kwargs.get("temperature", 0.0),
-                top_p=kwargs.get("top_p", 0.2),
-                ollama_host=kwargs.get("ollama_host", None)
-            )
-        
+        """
+        Factory exclusivo para la rama vLLM. 
+        Maneja la carga local de pesos para arquitecturas Qwen, Llama y Gemma.
+        """
+        # Configuración común para vLLM
+        vllm_config = {
+            "model_path": kwargs.get("model_path", f"~/models/{model}"),
+            "max_tokens": kwargs.get("max_tokens", 512),
+            "temperature": kwargs.get("temperature", 0.0),
+            "top_p": kwargs.get("top_p", 0.2),
+            "gpu_memory_utilization": kwargs.get("gpu_memory_utilization", 0.85),
+            "max_model_len": kwargs.get("max_model_len", 4096)
+        }
+
+        if "qwen" in model.lower():
+            from reasoning.qwen_vllm import QwenVLLMDescriptor
+            return QwenVLLMDescriptor(**vllm_config)
+
+        elif "llama" in model.lower():
+            from reasoning.llama_vllm import LlamaVLLMDescriptor
+            return LlamaVLLMDescriptor(**vllm_config)
+
+        elif "gemma" in model.lower():
+            from reasoning.gemma_vllm import GemmavLLMDescriptor
+            # Ajuste específico para Gemma (top_p más bajo por estabilidad)
+            vllm_config["top_p"] = kwargs.get("top_p", 0.1)
+            return GemmavLLMDescriptor(**vllm_config)
+
         else:
-            raise ValueError(f"Model not implemented: {model}")
+            raise ValueError(f"Motor vLLM no implementado para el modelo: {model}. "
+                             f"Esta rama solo soporta ejecuciones nativas locales.")
