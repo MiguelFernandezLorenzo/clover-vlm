@@ -107,6 +107,16 @@ if __name__ == '__main__':
     # Overrides de configuración
     if args.model: cfg.model = args.model
 
+    # 1. Resolver el '~' si existe en la configuración
+    base_path = os.path.expanduser(cfg.get('model_path', '~/models'))
+
+    # 2. Determinar qué modelo usar (prioridad al argumento de consola)
+    model_name = args.model if args.model else cfg.model
+
+    # 3. Concatenar para obtener la ruta absoluta final
+    # Si args.model ya es una ruta absoluta, os.path.join es inteligente y la respeta
+    full_model_path = os.path.join(base_path, model_name)
+
     logger.info(f"🚀 Cargando motor nativo vLLM: {cfg.model}")
 
     # Inicialización del modelo (Singleton)
@@ -117,7 +127,7 @@ if __name__ == '__main__':
             max_tokens=cfg.get('max_tokens', 512),
             temperature=cfg.get('temperature', 0.0),
             gpu_memory_utilization=args.gpu_util,
-            model_path=cfg.get('model_path', None) # Ruta a los pesos .safetensors/bin
+            model_path=full_model_path # Ruta a los pesos .safetensors/bin
         )
     except Exception as e:
         logger.critical(f"💥 Error fatal cargando el modelo: {e}")
