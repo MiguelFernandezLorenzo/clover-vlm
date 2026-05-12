@@ -61,5 +61,16 @@ class ReasoningModel:
                 ollama_host=kwargs.get("ollama_host", None)
             )
         
+        elif "gemma3" in model:
+            from reasoning.gemma_ollama import GemmaOllamaDescriptor
+            return GemmaOllamaDescriptor(
+                model,
+                max_tokens=kwargs.get("max_tokens", 256), # Gemma suele manejar contextos bien, subimos un poco
+                reasoning_effort=kwargs.get('reasoning_effort', 'low'),
+                temperature=kwargs.get("temperature", 0.0),
+                top_p=kwargs.get("top_p", 0.1), # Un top_p más bajo suele ayudar a la precisión en Gemma
+                ollama_host=kwargs.get("ollama_host", None)
+            )
+        
         else:
             raise ValueError(f"Model not implemented: {model}")

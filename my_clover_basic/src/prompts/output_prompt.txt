@@ -2,7 +2,7 @@
 
 You must respond with a **single valid JSON object** following the exact structure below:
 
-```json
+
 {
   "room": "estimated_room_name_or_unknown",
   "movement": "valid_single_movement_command",
@@ -10,7 +10,7 @@ You must respond with a **single valid JSON object** following the exact structu
   "description": "concise description of the visible environment",
   "door_position": "left | center | right | not_visible"
 }
-```
+
 
 ### ✅ Field Definitions
 

@@ -5,6 +5,7 @@ import cv2
 import json
 import requests
 import numpy as np
+import threading
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
 from clover import srv 
@@ -41,6 +42,14 @@ class CloverVLMClient:
             'D': {'name': 'Lateral', 'axis': 'y', 'base': 0.1,  'multiplier': [-1,1]}    
         }
 
+        self.current_nav_goal = None
+        self.is_running = True
+
+        # Hilo para mantener vivo el modo OFFBOARD
+        self.heartbeat_thread = threading.Thread(target=self.maintain_offboard)
+        self.heartbeat_thread.daemon = True
+        self.heartbeat_thread.start()
+
         rospy.Subscriber("/stereo_camera/right/image_color", Image, self.image_callback)
         rospy.loginfo(f"🚀 Client ready. VLM Server at: {self.url}")
 
@@ -58,6 +67,17 @@ class CloverVLMClient:
                    f"X: {telem.x:.2f}, Y: {telem.y:.2f}, Z: {telem.z:.2f}, Yaw: {telem.yaw:.2f}"
         except Exception:
             return None, "Telemetry unavailable"
+
+    def maintain_offboard(self):
+        rate = rospy.Rate(10) # 10Hz es perfecto para PX4
+        while not rospy.is_shutdown() and self.is_running:
+            if self.current_nav_goal:
+                # Re-enviamos el último comando conocido
+                try:
+                    self.navigate(**self.current_nav_goal)
+                except:
+                    pass
+            rate.sleep()
 
     def send_inference_request(self, query, topology, state):
         if self.last_image is None:
@@ -84,6 +104,28 @@ class CloverVLMClient:
         except Exception as e:
             rospy.logerr(f"VLM Server communication error: {e}")
             return None
+    def perform_panoramic_scan(self):
+        rospy.loginfo(" Iniciando escaneo de 360 grados...")
+        panoramic_images = []
+        
+        # 90 grados en radianes
+        ninety_degrees = math.radians(90)
+        
+        for i in range(4):
+            rospy.loginfo(f" Giro {i+1}/4...")
+            # Giramos 90 grados sobre el eje actual (frame body)
+            self.navigate(x=0, y=0, z=0, yaw=ninety_degrees, frame_id='body', relative=True)
+            
+            # Esperamos a que el giro termine y la imagen se estabilice
+            rospy.sleep(2.5) 
+            
+            if self.last_image is not None:
+                # Guardamos una copia de la imagen actual
+                panoramic_images.append(self.last_image.copy())
+            else:
+                rospy.logwarn(" No se pudo capturar imagen en este ángulo.")
+
+        return panoramic_images
 
     def execute_any_command(self, cmd):
         cmd = cmd.upper().strip()
@@ -91,8 +133,13 @@ class CloverVLMClient:
         # 1. Comandos básicos
         if cmd == "TAKEOFF":
             rospy.loginfo("Executing Takeoff...")
+            # Despegamos a 1.5m sobre la posición actual
             self.navigate(x=0, y=0, z=1.5, frame_id='body', auto_arm=True)
             rospy.sleep(4)
+            
+            # Seteamos el objetivo para el heartbeat tras el despegue
+            t = self.get_telemetry(frame_id='map')
+            self.current_nav_goal = {'x': t.x, 'y': t.y, 'z': t.z, 'yaw': t.yaw, 'frame_id': 'map'}
             return True
         elif cmd == "LAND":
             rospy.loginfo("Executing Landing...")
@@ -134,7 +181,8 @@ class CloverVLMClient:
                 else:
                     nav_args[config['axis']] = distance
                     rospy.loginfo(f"Executing: {config['name']} {distance}m")
-                
+
+                self.current_nav_goal = nav_args # Guardamos para el hilo de mantenimiento
                 self.navigate(**nav_args)
                 rospy.sleep(1)
                 return True
@@ -149,13 +197,24 @@ class CloverVLMClient:
         current_state = "Recognize Room" 
         query = initial_query
         
-        rospy.loginfo("Initial takeoff...")
-        self.execute_any_command("TAKEOFF")
+        # --- VERIFICACIÓN DE SEGURIDAD ANTES DE DESPEGAR ---
+        telem_start = self.get_telemetry()
+        
+        # Si no está armado, o si está armado pero muy cerca del suelo (z < 0.3m)
+        if not telem_start.armed or telem_start.z < 0.3:
+            rospy.loginfo("Dron en tierra o desarmado. Iniciando TAKEOFF...")
+            self.execute_any_command("TAKEOFF")
+        else:
+            rospy.loginfo(f"Dron ya en vuelo (Altitud: {telem_start.z:.2f}m). Saltando TAKEOFF.")
+        # --------------------------------------------------
 
         while not rospy.is_shutdown():
             # 1. OBTENER POSICIÓN ACTUAL ANTES DE LA ESPERA
             telem = self.get_telemetry(frame_id='map')
-            
+            self.current_nav_goal = {
+                'x': telem.x, 'y': telem.y, 'z': telem.z, 
+                'yaw': telem.yaw, 'frame_id': 'map'
+            }
             # 2. ENVIAR COMANDO DE "HOLD" (Mantener posición actual)
             # Esto refresca el modo OFFBOARD justo antes de que el script se bloquee con el VLM
             self.navigate(x=telem.x, y=telem.y, z=telem.z, yaw=telem.yaw, frame_id='map')

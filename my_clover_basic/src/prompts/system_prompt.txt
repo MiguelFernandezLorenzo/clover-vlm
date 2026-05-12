@@ -169,14 +169,13 @@ Your response **must** follow this format:
 - previous_movement: "Recognize Room"
 
 **Output**:
-```json
+
 {
   "room": "hallway",
   "movement": "B3",
   "state": "Oriented Towards Door",
   "description": "Visible hallway with a door, move robot to face the door"
 }
-```
 
 ---
 

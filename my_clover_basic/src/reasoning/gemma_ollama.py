@@ -31,19 +31,27 @@ def parse_json_from_text(text: str):
     except Exception:
         return text
 
-class LlamaOllamaDescriptor(VLMBaseModel):
-    def __init__(self, model: str = "llama3:8b", max_tokens: int = 512,
-                 temperature: float = 0.0, top_p: float = 0.2,
-                 reasoning_effort: str = "low",
-                 ollama_host: str = None):
+
+class GemmaOllamaDescriptor(VLMBaseModel):
+    """Descriptor that calls Gemma3 hosted via Ollama (local or cloud).
+
+    Expects environment variables `OLLAMA_HOST` (optional, default http://localhost:11434)
+    and `OLLAMA_API_KEY` (optional, for cloud).
+    """
+
+    def __init__(self, model: str = "gemma3:1b", max_tokens: int = 512,
+             temperature: float = 0.0, top_p: float = 0.2,
+             reasoning_effort: str = "low", # <--- Nuevo parámetro
+             img_type: str = "image/jpeg", ollama_host: str = None):
         self.model = model
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.top_p = top_p
-        self.reasoning_effort = reasoning_effort
-        self.ollama_host = ollama_host or os.getenv("OLLAMA_HOST", "http://172.30.240.1:11434")
+        self.reasoning_effort = reasoning_effort # <--- Almacenado
+        self.img_type = img_type
+        self.ollama_host = ollama_host or os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
         self.api_key = os.getenv("OLLAMA_API_KEY")
-        
+
     def _encode_image_b64(self, image):
         _, buffer = cv2.imencode('.jpg', image)
         return base64.b64encode(buffer).decode('utf-8')
@@ -58,7 +66,6 @@ class LlamaOllamaDescriptor(VLMBaseModel):
                 "description": "Visible hallway with a door, move robot to face the door"
             }
 
-        # Construir el texto del usuario
         user_text_parts = [user_query]
         if state:
             user_text_parts.append("Current FSM state: " + state)
@@ -71,7 +78,6 @@ class LlamaOllamaDescriptor(VLMBaseModel):
 
         user_text = "\n\n".join(user_text_parts)
 
-        # Cargar prompts del sistema
         system_prompt = load_system_prompt(
             path_dir="prompts",
             system_prompt_path="system_prompt.txt",
@@ -79,46 +85,43 @@ class LlamaOllamaDescriptor(VLMBaseModel):
             curr_state=state
         )
 
-        # Construir prompt limpio
+        # 2. El prompt final DEBE ser 100% texto humano legible
         prompt_limpio = system_prompt + "\n\n" + user_text
 
-        # Codificar imagen a Base64
+        # 3. Codificar la imagen a Base64 puro (sin prefijos "data:image/jpeg;base64,")
         img_b64 = self._encode_image_b64(image)
 
-        # Construir payload para Ollama
+        # 4. Construir el payload separando "prompt" e "images"
         payload = {
             "model": self.model,
-            "prompt": prompt_limpio,
-            "images": [img_b64],
+            "prompt": prompt_limpio,     # <-- Solo el texto de tus prompts
+            "images": [img_b64],         # <-- La imagen aislada en su propia lista
             "max_tokens": self.max_tokens,
             "top_p": self.top_p,
             "stream": False,
             "options": {
-                "stop": ["<thought>", "</thought>", "```json", "Analizar"],
-                "temperature": self.temperature
+                "stop": ["<thought>", "</thought>", "```json", "Analizar"] 
             }
         }
 
-        # Hacer la llamada a Ollama
         url = f"{self.ollama_host.rstrip('/')}/api/generate"
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=120)
+            resp = requests.post(url, json=payload, headers=headers, timeout=3000)
             resp.raise_for_status()
             text = resp.text
-            
-            # Intentar extraer JSON del texto de respuesta
+            # Try to extract JSON from response
             json_text = parse_json_from_text(text)
             try:
                 return json.loads(json_text)
             except Exception:
-                # Fallback: retornar texto sin procesar
+                # As fallback, return raw text
                 logger.debug("Could not parse JSON from Ollama response, returning raw text")
                 return {"raw": text}
 
         except Exception as e:
-            logger.exception("Error calling Ollama Llama: %s", str(e))
+            logger.exception("Error calling Ollama Qwen-VL: %s", str(e))
             return {"error": str(e)}
