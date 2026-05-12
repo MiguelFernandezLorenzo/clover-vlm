@@ -11,6 +11,13 @@ import logging
 import os
 import zipfile
 from datetime import datetime
+from transformers import Qwen2Tokenizer, Qwen2TokenizerFast
+
+# Parcheamos la clase para que siempre tenga el atributo que falta
+if not hasattr(Qwen2Tokenizer, 'all_special_tokens_extended'):
+    Qwen2Tokenizer.all_special_tokens_extended = property(lambda self: self.all_special_tokens)
+if not hasattr(Qwen2TokenizerFast, 'all_special_tokens_extended'):
+    Qwen2TokenizerFast.all_special_tokens_extended = property(lambda self: self.all_special_tokens)
 
 # Configuración de Logging
 logging.basicConfig(level=logging.INFO, format="%(message)s")
