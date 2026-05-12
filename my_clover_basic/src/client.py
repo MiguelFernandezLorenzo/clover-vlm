@@ -210,7 +210,13 @@ class CloverVLMClient:
 
         while not rospy.is_shutdown():
             # 1. OBTENER POSICIÓN ACTUAL ANTES DE LA ESPERA
-            telem = self.get_telemetry(frame_id='map')
+            try:
+                telem = self.get_telemetry(frame_id='map')
+                if not telem.x or math.isnan(telem.x):
+                    raise Exception("Map position invalid")
+            except:
+                # Si falla el mapa, usamos el frame local para no bloquear el heartbeat
+                telem = self.get_telemetry(frame_id='navigate_target')
             self.current_nav_goal = {
                 'x': telem.x, 'y': telem.y, 'z': telem.z, 
                 'yaw': telem.yaw, 'frame_id': 'map'
