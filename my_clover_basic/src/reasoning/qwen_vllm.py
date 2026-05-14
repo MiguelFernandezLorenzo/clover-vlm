@@ -46,6 +46,36 @@ class QwenVLLMDescriptor(VLMBaseModel):
             quantization="awq" if "awq" in model_path.lower() else None
         )
 
+    def parse_json_from_text(self,text):
+        """
+        Busca, extrae y parsea de forma robusta un bloque JSON 
+        ignorando cadenas de texto previas (como <think>...</think> o markdown).
+        """
+        if not text:
+            return {"movement": "STOP", "error": "Texto de entrada vacío"}
+
+        # Forzamos que sea un string plano
+        text_str = str(text).strip()
+
+        # Encontrar el inicio de la primera llave y el fin de la última
+        start_idx = text_str.find('{')
+        end_idx = text_str.rfind('}')
+
+        # Verificación de seguridad de los índices
+        if start_idx == -1 or end_idx == -1 or start_idx > end_idx:
+            logger.error(f"❌ No se encontraron delimitadores JSON válidos {{}} en el texto.")
+            return {"movement": "STOP", "error": "No se encontraron llaves JSON", "raw": text_str}
+
+        # Extraer el sub-string que contiene estrictamente el JSON
+        json_candidate = text_str[start_idx:end_idx + 1]
+
+        try:
+            # Intentar parsear el fragmento extraído
+            return json.loads(json_candidate)
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Fallo al deserializar el fragmento JSON extraído. Error: {e}")
+            return {"movement": "STOP", "error": f"JSON inválido: {str(e)}", "raw": json_candidate}
+
     def generate_trajectory(self, image, user_query, topology=None, state=None,
                             telemetry_text="", previous_movement=None, mov_history=None, test=False):
         if test:
@@ -66,7 +96,7 @@ class QwenVLLMDescriptor(VLMBaseModel):
 
         # vLLM para modelos Vision (Qwen-VL) usa un formato de diccionario para el contenido
         # Nota: Ajustamos al esquema Chat de Qwen 2.5/3 VL
-        prompt = f"{system_prompt}\n\n{user_text}"
+        prompt = f"{system_prompt}\n\n{user_text}\n\n<|image_pad|>\n"
 
         # 3. Formatear la entrada para vLLM Vision
         # vLLM espera una imagen como objeto PIL o matriz numpy en un formato específico
@@ -85,10 +115,9 @@ class QwenVLLMDescriptor(VLMBaseModel):
             generated_text = outputs[0].outputs[0].text
             
             # Procesar JSON (Reutilizando tu lógica)
-            from reasoning.parser_helper import parse_json_from_text # Asumiendo que moviste el helper
-            json_text = parse_json_from_text(generated_text)
-            
-            return json.loads(json_text)
+            json_text = self.parse_json_from_text(generated_text)
+        
+            return json_text  # Si ya es un diccionario, lo devolvemos tal cual
 
         except Exception as e:
             logger.exception("Error en inferencia vLLM: %s", str(e))

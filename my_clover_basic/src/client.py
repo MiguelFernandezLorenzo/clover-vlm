@@ -165,12 +165,11 @@ class CloverVLMClient:
             # La ejecución se bloquea aquí. Si COM_OBL_ACT es 0, el dron se quedará quieto.
             result = self.send_inference_request(query, self.topology, current_state)
             
-            if result and 'response' in result:
+            if result and 'movement' in result:
                 try:
-                    res_data = json.loads(result.get('response', '{}'))
-                    cmd = res_data.get('movement', 'WAIT')
-                    new_state = res_data.get('state', current_state)
-                    
+                    result = json.loads(result) if isinstance(result, str) else result
+                    cmd = result.get('movement', 'WAIT')
+                    new_state = result.get('state', current_state)
                     rospy.loginfo(f"🤖 VLM Response: {cmd} | Next State: {new_state}")
 
                     if cmd != 'WAIT':
